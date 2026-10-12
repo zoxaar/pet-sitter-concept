@@ -15,30 +15,45 @@ jobs:
   anonymous-https:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify live HTTP 200, final copy and local assets anonymously
+      - name: Verify final public concept page and nine assets anonymously
         shell: bash
         run: |
           set -euo pipefail
           url="https://zoxaar.github.io/pet-sitter-concept/"
-          for attempt in $(seq 1 15); do
-            code=$(curl --silent --show-error --location --max-time 20 --output index.html --write-out '%{http_code}' "$url" || true)
-            if [ "$code" = "200" ] && grep -q 'Pet Sitter Handover Kit Preview | PAW &amp; PAUSE' index.html && grep -q 'Not available to buy or download' index.html; then
-              echo "PASS anonymous HTTPS status=$code final HTML confirmed"
+          for attempt in $(seq 1 24); do
+            code=$(curl --silent --show-error --location --max-time 25 --output index.html --write-out '%{http_code}' "$url" || true)
+            if [ "$code" = "200" ] && grep -q 'Four real, blank pages from the nine-page kit' index.html && grep -q 'actual-pdf-page-08.png' index.html; then
+              echo "PASS anonymous HTTPS HTML 200 with new four-page gallery (attempt $attempt)"
               break
             fi
-            echo "Attempt $attempt: status=$code or deployment not refreshed"
-            if [ "$attempt" = "15" ]; then exit 1; fi
+            echo "Attempt $attempt: status=${code:-unavailable} or new preview version not yet deployed"
+            if [ "$attempt" = "24" ]; then echo "FAIL: latest public site not ready"; exit 1; fi
             sleep 10
           done
           for path in styles.css app.js assets/favicon.svg assets/pet-sitter-kit-overview.png assets/pet-sitter-kit-pages.png; do
-            status=$(curl --silent --show-error --location --max-time 20 --output /dev/null --write-out '%{http_code}' "$url$path")
-            echo "$path: HTTP $status"
-            test "$status" = "200"
+            status=$(curl --silent --show-error --location --max-time 25 --output /dev/null --write-out '%{http_code}' "$url$path")
+            echo "EXISTING $path: HTTP $status"; test "$status" = "200"
           done
+          for p in 01 02 05 08; do
+            asset="assets/actual-pdf-page-$p.png"
+            code=$(curl --silent --show-error --location --max-time 25 --output "page-$p.png" --write-out '%{http_code}' "$url$asset")
+            echo "NEW $asset: HTTP $code"; test "$code" = "200"
+            test "$(head -c 8 "page-$p.png" | od -An -tx1 | tr -d ' \n')" = '89504e470d0a1a0a'
+          done
+          printf '%s  %s\n' \
+            'a602ecd41d7ba09d233a88000eb3fe60edc82ec34c0b0aab3fdbe1576ef99061' 'page-01.png' \
+            '1dee636d61aa770e3b0e445708594d8780b0685aa50abb19de1e4a64b90d6269' 'page-02.png' \
+            '7c542dfafabc396886c807ea8840283cd474a58c7e287ad13af19bd8a173ec27' 'page-05.png' \
+            'be46040ef206149d1866bde0995a6e4c5286a632e76ad7fb6dcfa0936a77a612' 'page-08.png' | sha256sum --check
+          grep -q 'PAW &amp; PAUSE' index.html
           grep -q 'noindex,nofollow,noarchive' index.html
           grep -q 'CONCEPT PREVIEW — NOT FOR SALE OR DOWNLOAD' index.html
           grep -q 'The A4 and US Letter PDFs contain the same nine page designs' index.html
           grep -q 'The website hosting provider may process ordinary server access logs' index.html
-          ! grep -qi 'unpublished concept preview' index.html
-          ! grep -qi '<form\|<iframe' index.html
-          echo "PASS public unauthenticated HTTPS + 5 asset endpoints + concept/brand/privacy checks"
+          grep -q 'Actual pages, not just mockups' index.html || grep -q 'Four real, blank pages from the nine-page kit' index.html
+          test "$(grep -o 'class="actual-page-card"' index.html | wc -l)" -eq 4
+          ! grep -Eqi '<form|<iframe|<input|<script[^>]+https?://|<a[^>]+download=|https?://.*(analytics|pixel|tagmanager)' index.html
+          ! grep -Eqi 'unpublished concept preview|buy now|instant download' index.html
+          echo 'PASS independently hosted anonymous public HTTPS: index + 9 existing/new asset URLs HTTP 200; 4 original PNG SHA256 fingerprints match T1-003; concept, brand and privacy gates PASS'
+          echo '### T4-004 verified anonymous GitHub Pages public HTTPS' >> "$GITHUB_STEP_SUMMARY"
+          echo 'HTML 200; 9 assets 200; all four T1-003 PNG SHA256 verified; concept/noindex/privacy checks PASS.' >> "$GITHUB_STEP_SUMMARY"
