@@ -1,0 +1,44 @@
+name: Anonymous HTTPS acceptance check
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'styles.css'
+      - 'app.js'
+      - 'assets/**'
+      - '.github/workflows/public-https-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  anonymous-https:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify live HTTP 200, final copy and local assets anonymously
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://zoxaar.github.io/pet-sitter-concept/"
+          for attempt in $(seq 1 15); do
+            code=$(curl --silent --show-error --location --max-time 20 --output index.html --write-out '%{http_code}' "$url" || true)
+            if [ "$code" = "200" ] && grep -q 'Pet Sitter Handover Kit Preview | PAW &amp; PAUSE' index.html && grep -q 'Not available to buy or download' index.html; then
+              echo "PASS anonymous HTTPS status=$code final HTML confirmed"
+              break
+            fi
+            echo "Attempt $attempt: status=$code or deployment not refreshed"
+            if [ "$attempt" = "15" ]; then exit 1; fi
+            sleep 10
+          done
+          for path in styles.css app.js assets/favicon.svg assets/pet-sitter-kit-overview.png assets/pet-sitter-kit-pages.png; do
+            status=$(curl --silent --show-error --location --max-time 20 --output /dev/null --write-out '%{http_code}' "$url$path")
+            echo "$path: HTTP $status"
+            test "$status" = "200"
+          done
+          grep -q 'noindex,nofollow,noarchive' index.html
+          grep -q 'CONCEPT PREVIEW — NOT FOR SALE OR DOWNLOAD' index.html
+          grep -q 'The A4 and US Letter PDFs contain the same nine page designs' index.html
+          grep -q 'The website hosting provider may process ordinary server access logs' index.html
+          ! grep -qi 'unpublished concept preview' index.html
+          ! grep -qi '<form\|<iframe' index.html
+          echo "PASS public unauthenticated HTTPS + 5 asset endpoints + concept/brand/privacy checks"
